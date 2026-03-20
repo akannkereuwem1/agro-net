@@ -2,7 +2,7 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 from rest_framework import status
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,7 +13,7 @@ from .filters import ProductFilter
 from .models import Product
 from .permissions import IsProductOwnerOrReadOnly
 from .serializers import ProductSerializer
-from .services import create_product
+from .services import create_product, get_farmer_products
 from .image_service import upload_product_image
 
 
@@ -120,3 +120,24 @@ class ProductImageUploadView(APIView):
                 {"error": str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+@extend_schema(
+    summary="List My Products",
+    description="Retrieve a paginated list of all products listed by the authenticated farmer, "
+                "including both available and unavailable listings, ordered newest first.",
+    responses={200: ProductSerializer(many=True)},
+)
+class FarmerProductListView(ListAPIView):
+    """
+    Returns all products belonging to the authenticated farmer.
+
+    - GET: Paginated list of the farmer's own products (available and unavailable).
+    - Requires: IsAuthenticated + IsFarmer
+    """
+
+    serializer_class = ProductSerializer
+    permission_classes = [IsAuthenticated, IsFarmer]
+
+    def get_queryset(self):
+        return get_farmer_products(self.request.user)
