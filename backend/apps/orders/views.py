@@ -8,7 +8,8 @@ checks, service delegation, and response serialization.
 
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter
+from drf_spectacular.types import OpenApiTypes
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -38,6 +39,23 @@ class OrderListView(APIView):
     @extend_schema(
         summary="List orders",
         description="Returns orders scoped to the authenticated user. Buyers see their own orders; farmers see orders assigned to them.",
+        parameters=[
+            OpenApiParameter(
+                name="status",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Filter orders by status. One of: pending, confirmed, paid, completed, declined.",
+                enum=["pending", "confirmed", "paid", "completed", "declined"],
+            ),
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Page number for paginated results (page size: 20).",
+            ),
+        ],
         responses={200: OrderSerializer(many=True)},
     )
     def get(self, request: Request) -> Response:
