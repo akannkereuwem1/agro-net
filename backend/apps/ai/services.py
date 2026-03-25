@@ -17,7 +17,21 @@ try:
 except ImportError:
     tf = None  # type: ignore[assignment]
 
-from .exceptions import ModelNotAvailableError, PredictionError
+import requests
+
+try:
+    from google.cloud import vision
+except ImportError:
+    vision = None  # type: ignore[assignment]
+
+from .exceptions import (
+    InvalidImageContentError,
+    ModelNotAvailableError,
+    PredictionError,
+    RemoteImageFetchError,
+    VisionAPIConfigError,
+    VisionAPIError,
+)
 from .models import PricePrediction
 
 logger = logging.getLogger(__name__)
@@ -165,4 +179,145 @@ class PredictionService:
             "lower_bound": lower_bound,
             "upper_bound": upper_bound,
             "model_version": model_version,
+        }
+
+
+class ClassificationService:
+    """Handles Google Cloud Vision API image classification."""
+
+    @staticmethod
+    def _fetch_remote_image(url: str) -> bytes:
+        """
+        Fetch image bytes from a remote URL with a 5-second timeout.
+
+        Args:
+            url: Publicly accessible image URL.
+
+        Returns:
+            Raw image bytes from the response body.
+
+        Raises:
+            RemoteImageFetchError: On timeout or connection error.
+        """
+        try:
+            response = requests.get(url, timeout=5)
+            response.raise_for_status()
+            return response.content
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            raise RemoteImageFetchError(
+                f"Could not fetch image from URL: {url}"
+            ) from exc
+
+    @staticmethod
+    def _call_vision_api(image_bytes: bytes) -> list[dict]:
+        """
+        Call Google Vision API label_detection on image_bytes.
+
+        Checks ``GOOGLE_APPLICATION_CREDENTIALS`` env var — raises
+        ``VisionAPIConfigError`` if absent.  Calls
+        ``vision.ImageAnnotatorClient().label_detection()``.
+
+        Args:
+            image_bytes: Raw bytes of the image to classify.
+
+        Returns:
+            Labels sorted by confidence descending as
+            ``[{"label": str, "confidence": float}, ...]``.
+
+        Raises:
+            VisionAPIConfigError: If credentials env var is missing or
+                ``google-cloud-vision`` is not installed.
+            InvalidImageContentError: If the Vision API rejects the image
+                content as unrecognisable (``InvalidArgument``).
+            VisionAPIError: On any other Vision API failure.
+        """
+        credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if not credentials_path:
+            raise VisionAPIConfigError(
+                "GOOGLE_APPLICATION_CREDENTIALS environment variable is not set."
+            )
+
+        if vision is None:
+            raise VisionAPIConfigError(
+                "google-cloud-vision is not installed."
+            )
+
+        try:
+            client = vision.ImageAnnotatorClient()
+            image = vision.Image(content=image_bytes)
+            response = client.label_detection(image=image)
+
+            if response.error.message:
+                raise VisionAPIError(response.error.message)
+
+            labels = [
+                {
+                    "label": annotation.description,
+                    "confidence": round(annotation.score, 4),
+                }
+                for annotation in response.label_annotations
+            ]
+            labels.sort(key=lambda x: x["confidence"], reverse=True)
+            return labels
+
+        except VisionAPIConfigError:
+            raise
+        except Exception as exc:
+            exc_str = str(exc).lower()
+            if "invalid" in exc_str or "unrecognized" in exc_str or "unsupported" in exc_str:
+                raise InvalidImageContentError(str(exc)) from exc
+            raise VisionAPIError(str(exc)) from exc
+
+    @staticmethod
+    def classify(
+        user_id: UUID,
+        image_bytes: bytes | None = None,
+        image_url: str | None = None,
+    ) -> dict:
+        """
+        Classify an image using the Vision API and persist the result.
+
+        Accepts either raw ``image_bytes`` or a publicly accessible
+        ``image_url``.  Fetches the remote image if a URL is provided.
+        Persists an ``ImageClassification`` record on success only.
+
+        Args:
+            user_id: UUID of the requesting user.
+            image_bytes: Raw image bytes (mutually exclusive with image_url).
+            image_url: Publicly accessible HTTPS image URL (mutually exclusive
+                with image_bytes).
+
+        Returns:
+            A dict with keys ``classification_id``, ``labels``, ``success``,
+            and ``created_at``.
+
+        Raises:
+            RemoteImageFetchError: If the remote URL cannot be fetched.
+            VisionAPIConfigError: If credentials are missing or the library is
+                not installed.
+            InvalidImageContentError: If the image content is unrecognisable.
+            VisionAPIError: On any other Vision API failure.
+        """
+        from .models import ImageClassification, ImageSource
+
+        if image_url:
+            image_bytes = ClassificationService._fetch_remote_image(image_url)
+            source = ImageSource.URL
+        else:
+            source = ImageSource.UPLOAD
+
+        labels = ClassificationService._call_vision_api(image_bytes)
+
+        record = ImageClassification.objects.create(
+            user_id=user_id,
+            image_source=source,
+            image_url=image_url,
+            labels=labels,
+        )
+
+        return {
+            "classification_id": record.id,
+            "labels": labels,
+            "success": True,
+            "created_at": record.created_at,
         }
