@@ -531,3 +531,145 @@ def test_oversized_file_always_rejected(extra_bytes):
     assert serializer.is_valid() is False
     errors = str(serializer.errors)
     assert "image file exceeds the 10 MB size limit" in errors
+
+
+# ---------------------------------------------------------------------------
+# Property 8: Prediction history is isolated per user and ordered
+# Feature: ai-price-prediction, Property 8: Prediction history is isolated per user and ordered
+# Validates: Requirements 4.1, 4.2
+# ---------------------------------------------------------------------------
+
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.test import APIClient
+
+from ai.models import PricePrediction, ImageClassification
+from products.models import Unit
+from ai.models import Season
+
+
+@pytest.mark.django_db
+@settings(max_examples=10, deadline=None, suppress_health_check=[])
+@given(
+    n_predictions=st.integers(min_value=1, max_value=5),
+)
+def test_prediction_history_isolated_per_user(n_predictions):
+    """
+    Property 8: GET /api/ai/predict-price/ returns only the requesting user's
+    PricePrediction records, ordered by created_at descending.
+    """
+    user_a = User.objects.create_user(
+        email=f"usera_{uuid.uuid4().hex[:8]}@test.com",
+        password="testpass123",
+        role=Role.FARMER,
+    )
+    user_b = User.objects.create_user(
+        email=f"userb_{uuid.uuid4().hex[:8]}@test.com",
+        password="testpass123",
+        role=Role.FARMER,
+    )
+
+    # Create predictions for both users
+    for _ in range(n_predictions):
+        PricePrediction.objects.create(
+            user=user_a,
+            crop_type="tomato",
+            quantity="10.00",
+            unit=Unit.KG,
+            location="Lagos",
+            season=Season.DRY,
+            predicted_price="500.00",
+            lower_bound="450.00",
+            upper_bound="550.00",
+            model_version="v1.0",
+        )
+        PricePrediction.objects.create(
+            user=user_b,
+            crop_type="maize",
+            quantity="20.00",
+            unit=Unit.KG,
+            location="Abuja",
+            season=Season.WET,
+            predicted_price="300.00",
+            lower_bound="270.00",
+            upper_bound="330.00",
+            model_version="v1.0",
+        )
+
+    client = APIClient()
+    token = RefreshToken.for_user(user_a)
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+
+    response = client.get("/api/ai/predict-price/")
+    assert response.status_code == 200
+
+    results = response.data.get("results", response.data)
+    returned_ids = {str(r["user"]) for r in results}
+
+    # Only user_a's records returned
+    assert str(user_b.id) not in returned_ids
+    assert all(str(r["user"]) == str(user_a.id) for r in results)
+
+    # Ordering: created_at descending
+    dates = [r["created_at"] for r in results]
+    assert dates == sorted(dates, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Property 17: Classification history is isolated per user and ordered
+# Feature: ai-price-prediction, Property 17: Classification history is isolated per user and ordered
+# Validates: Requirements 12.1, 12.2
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@settings(max_examples=10, deadline=None, suppress_health_check=[])
+@given(
+    n_classifications=st.integers(min_value=1, max_value=5),
+)
+def test_classification_history_isolated_per_user(n_classifications):
+    """
+    Property 17: GET /api/ai/classify-image/ returns only the requesting user's
+    ImageClassification records, ordered by created_at descending.
+    """
+    from ai.models import ImageSource
+
+    user_a = User.objects.create_user(
+        email=f"usera_{uuid.uuid4().hex[:8]}@test.com",
+        password="testpass123",
+        role=Role.FARMER,
+    )
+    user_b = User.objects.create_user(
+        email=f"userb_{uuid.uuid4().hex[:8]}@test.com",
+        password="testpass123",
+        role=Role.FARMER,
+    )
+
+    for _ in range(n_classifications):
+        ImageClassification.objects.create(
+            user=user_a,
+            image_source=ImageSource.UPLOAD,
+            labels=[{"label": "Tomato", "confidence": 0.95}],
+        )
+        ImageClassification.objects.create(
+            user=user_b,
+            image_source=ImageSource.UPLOAD,
+            labels=[{"label": "Maize", "confidence": 0.88}],
+        )
+
+    client = APIClient()
+    token = RefreshToken.for_user(user_a)
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+
+    response = client.get("/api/ai/classify-image/")
+    assert response.status_code == 200
+
+    results = response.data.get("results", response.data)
+    returned_ids = {str(r["user"]) for r in results}
+
+    # Only user_a's records returned
+    assert str(user_b.id) not in returned_ids
+    assert all(str(r["user"]) == str(user_a.id) for r in results)
+
+    # Ordering: created_at descending
+    dates = [r["created_at"] for r in results]
+    assert dates == sorted(dates, reverse=True)
