@@ -342,3 +342,59 @@ def test_failed_prediction_never_persisted(crop_type, quantity, unit, location, 
 
     # Reset singleton after test
     PredictionService._model = None
+
+
+# ---------------------------------------------------------------------------
+# Property 14: Classification labels are ordered by confidence descending
+# Feature: ai-price-prediction, Property 14: Classification labels are ordered by confidence descending
+# Validates: Requirements 10.2
+# ---------------------------------------------------------------------------
+
+from unittest.mock import MagicMock, patch
+
+from ai.services import ClassificationService
+
+
+_label_annotation_strategy = st.fixed_dictionaries({
+    "description": st.text(min_size=1, max_size=30, alphabet=st.characters(whitelist_categories=('Lu', 'Ll'))),
+    "score": st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
+})
+
+
+@settings(max_examples=25, deadline=None)
+@given(annotations=st.lists(_label_annotation_strategy, min_size=0, max_size=10))
+def test_classification_labels_ordered_by_confidence_descending(annotations):
+    """
+    Property 14: For any Vision API response containing labels, ClassificationService
+    must return a list where each label's confidence >= the next label's confidence.
+    """
+    import os
+
+    # Build mock annotation objects
+    mock_annotations = []
+    for ann in annotations:
+        mock_ann = MagicMock()
+        mock_ann.description = ann["description"]
+        mock_ann.score = ann["score"]
+        mock_annotations.append(mock_ann)
+
+    mock_response = MagicMock()
+    mock_response.error.message = ""
+    mock_response.label_annotations = mock_annotations
+
+    mock_client = MagicMock()
+    mock_client.label_detection.return_value = mock_response
+
+    with patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/fake/creds.json"}):
+        with patch("ai.services.vision") as mock_vision:
+            mock_vision.ImageAnnotatorClient.return_value = mock_client
+            mock_vision.Image.return_value = MagicMock()
+
+            result = ClassificationService._call_vision_api(b"fake-image-bytes")
+
+    # Verify ordering: each confidence >= next
+    for i in range(len(result) - 1):
+        assert result[i]["confidence"] >= result[i + 1]["confidence"], (
+            f"Labels not sorted: index {i} confidence {result[i]['confidence']} "
+            f"< index {i+1} confidence {result[i+1]['confidence']}"
+        )
