@@ -398,3 +398,136 @@ def test_classification_labels_ordered_by_confidence_descending(annotations):
             f"Labels not sorted: index {i} confidence {result[i]['confidence']} "
             f"< index {i+1} confidence {result[i+1]['confidence']}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Property 15: Successful classification is always persisted
+# Feature: ai-price-prediction, Property 15: Successful classification is always persisted
+# Validates: Requirements 11.1
+# ---------------------------------------------------------------------------
+
+from ai.models import ImageClassification
+
+
+@pytest.mark.django_db
+@settings(max_examples=25, deadline=None, suppress_health_check=[])
+@given(
+    label_list=st.lists(
+        st.fixed_dictionaries({
+            "label": st.text(min_size=1, max_size=20, alphabet=st.characters(whitelist_categories=('Lu', 'Ll'))),
+            "score": st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
+        }),
+        min_size=0,
+        max_size=5,
+    )
+)
+def test_successful_classification_always_persisted(label_list):
+    """
+    Property 15: For any valid classification request that produces a result,
+    an ImageClassification record must exist in the database with matching values.
+    """
+    import os
+
+    user = User.objects.create_user(
+        email=f"user_{uuid.uuid4().hex[:8]}@test.com",
+        password="testpass123",
+        role=Role.FARMER,
+    )
+
+    mock_annotations = []
+    for item in label_list:
+        ann = MagicMock()
+        ann.description = item["label"]
+        ann.score = item["score"]
+        mock_annotations.append(ann)
+
+    mock_response = MagicMock()
+    mock_response.error.message = ""
+    mock_response.label_annotations = mock_annotations
+
+    mock_client = MagicMock()
+    mock_client.label_detection.return_value = mock_response
+
+    with patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/fake/creds.json"}):
+        with patch("ai.services.vision") as mock_vision:
+            mock_vision.ImageAnnotatorClient.return_value = mock_client
+            mock_vision.Image.return_value = MagicMock()
+
+            result = ClassificationService.classify(
+                user_id=user.id,
+                image_bytes=b"fake-image-bytes",
+            )
+
+    assert ImageClassification.objects.filter(user_id=user.id).count() == 1
+    record = ImageClassification.objects.get(user_id=user.id)
+    assert record.image_source == "upload"
+    assert "classification_id" in result
+    assert "labels" in result
+    assert result["success"] is True
+    assert "created_at" in result
+
+
+# ---------------------------------------------------------------------------
+# Property 13: Non-HTTPS image URL always rejected
+# Feature: ai-price-prediction, Property 13: Non-HTTPS image URL always rejected
+# Validates: Requirements 9.3
+# ---------------------------------------------------------------------------
+
+from ai.serializers import ClassifyImageRequestSerializer
+
+
+@settings(max_examples=25, deadline=None)
+@given(
+    host=st.from_regex(r"[a-z]{3,10}", fullmatch=True),
+    path=st.from_regex(r"/[a-z]{0,10}\.jpg", fullmatch=True),
+)
+def test_non_https_url_always_rejected(host, path):
+    """
+    Property 13: For any image_url whose scheme is not https, the serializer
+    must be invalid and report 'image_url must use HTTPS'.
+    """
+    # Use http:// — Django's URLField accepts it as structurally valid,
+    # so our custom HTTPS check is guaranteed to be the rejection reason.
+    url = f"http://{host}.com{path}"
+    data = {"image_url": url}
+    serializer = ClassifyImageRequestSerializer(data=data)
+    assert serializer.is_valid() is False
+    errors = str(serializer.errors)
+    assert "image_url must use HTTPS" in errors
+
+
+# ---------------------------------------------------------------------------
+# Property 12: Oversized file always rejected
+# Feature: ai-price-prediction, Property 12: Oversized file always rejected
+# Validates: Requirements 9.2
+# ---------------------------------------------------------------------------
+
+from io import BytesIO
+
+from django.core.files.uploadedfile import InMemoryUploadedFile
+
+
+@settings(max_examples=25, deadline=None)
+@given(
+    extra_bytes=st.integers(min_value=1, max_value=1024 * 1024),  # 1 byte to 1 MB over limit
+)
+def test_oversized_file_always_rejected(extra_bytes):
+    """
+    Property 12: For any uploaded file whose size exceeds 10 MB, the serializer
+    must be invalid and report 'image file exceeds the 10 MB size limit'.
+    """
+    MAX_SIZE = 10 * 1024 * 1024
+    oversized_content = b"x" * (MAX_SIZE + extra_bytes)
+    file_obj = InMemoryUploadedFile(
+        file=BytesIO(oversized_content),
+        field_name="image",
+        name="big.jpg",
+        content_type="image/jpeg",
+        size=len(oversized_content),
+        charset=None,
+    )
+    data = {"image": file_obj}
+    serializer = ClassifyImageRequestSerializer(data=data)
+    assert serializer.is_valid() is False
+    errors = str(serializer.errors)
+    assert "image file exceeds the 10 MB size limit" in errors
