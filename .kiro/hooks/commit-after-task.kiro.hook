@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "name": "Auto-commit on Task Completion",
+  "description": "Automatically stages all changes and commits with the completed task name after each spec task is marked complete",
+  "version": "1",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "commit all your changes"
+  },
+  "workspaceFolderName": "agronet_backend_prediction",
+  "shortName": "commit-after-task"
+}
