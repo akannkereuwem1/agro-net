@@ -2,18 +2,18 @@
 Integration tests for the AI price prediction and image classification features.
 
 Uses Django REST Framework's APITestCase and JWT authentication.
-All external services (TensorFlow model, Vision API, requests.get) are mocked.
+All external services (Gemini API, Vision API, requests.get) are mocked.
 
 Covers Requirements: 1.3, 2.2, 2.3, 2.4, 4.3, 5.1, 5.2, 8.4, 9.4,
                      10.3, 10.4, 10.5, 10.6, 12.3, 13.2, 13.3
 """
 
 import io
+import json
 import os
 import uuid
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
@@ -116,8 +116,8 @@ class PricePredictionIntegrationTests(APITestCase):
 
     def test_model_not_found_returns_503(self) -> None:
         """
-        When PredictionService._model is None and load_model raises
-        ModelNotAvailableError, POST must return 503 with the correct message.
+        When GEMINI_API_KEY is missing, load_model raises ModelNotAvailableError
+        and POST must return 503 with the correct message.
         Validates: Req 2.3
         """
         PredictionService._model = None
@@ -125,7 +125,7 @@ class PricePredictionIntegrationTests(APITestCase):
         with patch.object(
             PredictionService,
             "load_model",
-            side_effect=ModelNotAvailableError("model file not found"),
+            side_effect=ModelNotAvailableError("GEMINI_API_KEY is not set"),
         ):
             response = self.client.post(
                 PREDICT_URL,
@@ -140,13 +140,13 @@ class PricePredictionIntegrationTests(APITestCase):
 
     def test_inference_failure_returns_500(self) -> None:
         """
-        When the loaded model's predict() raises an Exception, POST must
-        return 500 with the message 'prediction failed'.
+        When Gemini generate_content raises an Exception, POST must return 500
+        with the message 'prediction failed'.
         Validates: Req 2.4
         """
-        mock_model = MagicMock()
-        mock_model.predict.side_effect = Exception("GPU out of memory")
-        PredictionService._model = mock_model
+        mock_gemini = MagicMock()
+        mock_gemini.generate_content.side_effect = Exception("Gemini API error")
+        PredictionService._model = mock_gemini
 
         response = self.client.post(
             PREDICT_URL,
@@ -163,14 +163,17 @@ class PricePredictionIntegrationTests(APITestCase):
 
     def test_valid_prediction_returns_200(self) -> None:
         """
-        A valid POST with a mocked model returning 500.0 must return 200
-        with predicted_price, lower_bound, upper_bound, model_version, and
-        success: true.
+        A valid POST with a mocked Gemini response must return 200 with
+        predicted_price, lower_bound, upper_bound, model_version, success: true.
         Validates: Req 1.3, 2.2
         """
-        mock_model = MagicMock()
-        mock_model.predict.return_value = np.array([[500.0]])
-        PredictionService._model = mock_model
+        mock_gemini = MagicMock()
+        mock_gemini.generate_content.return_value.text = json.dumps({
+            "predicted_price": 500.00,
+            "lower_bound": 450.00,
+            "upper_bound": 550.00,
+        })
+        PredictionService._model = mock_gemini
 
         response = self.client.post(
             PREDICT_URL,
@@ -187,103 +190,90 @@ class PricePredictionIntegrationTests(APITestCase):
         self.assertIn("upper_bound", body)
         self.assertIn("model_version", body)
 
-    # ── Singleton / Load-Once Behaviour ─────────────────────────────────────
-
     def test_model_loaded_exactly_once(self) -> None:
         """
-        Calling load_model() once with a mocked tf must set _model and call
-        tf.keras.models.load_model exactly once.
+        Calling load_model() once with a mocked genai must set _model and call
+        genai.GenerativeModel exactly once.
         Validates: Req 2.2 (singleton pattern)
         """
         PredictionService._model = None
 
-        mock_loaded = MagicMock()
+        mock_model_instance = MagicMock()
 
-        with patch("ai.services.tf") as mock_tf:
-            mock_tf.keras.models.load_model.return_value = mock_loaded
-            PredictionService.load_model()
+        with patch("ai.services.genai") as mock_genai:
+            mock_genai.GenerativeModel.return_value = mock_model_instance
+            with patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}):
+                PredictionService.load_model()
 
-            # _model must be set after the first call
             self.assertIsNotNone(PredictionService._model)
-            # tf.keras.models.load_model called exactly once
-            mock_tf.keras.models.load_model.assert_called_once()
-
-    # ── Environment Variable: AI_MODEL_PATH ──────────────────────────────────
+            mock_genai.GenerativeModel.assert_called_once()
 
     def test_ai_model_path_env_var_default(self) -> None:
         """
-        When AI_MODEL_PATH is unset, load_model() must call
-        tf.keras.models.load_model with 'ai/model/price_model.keras'.
+        When GEMINI_MODEL is unset, load_model() must use 'gemini-1.5-flash'.
         Validates: Req 2.2
         """
         PredictionService._model = None
-        env = {k: v for k, v in os.environ.items() if k != "AI_MODEL_PATH"}
+        env = {k: v for k, v in os.environ.items() if k not in ("GEMINI_MODEL", "GEMINI_API_KEY")}
+        env["GEMINI_API_KEY"] = "test-key"
 
         with patch.dict(os.environ, env, clear=True):
-            with patch("ai.services.tf") as mock_tf:
-                mock_tf.keras.models.load_model.return_value = MagicMock()
+            with patch("ai.services.genai") as mock_genai:
+                mock_genai.GenerativeModel.return_value = MagicMock()
                 PredictionService.load_model()
-                mock_tf.keras.models.load_model.assert_called_once_with(
-                    "ai/model/price_model.keras"
-                )
+                mock_genai.GenerativeModel.assert_called_once_with("gemini-1.5-flash")
 
     def test_ai_model_path_env_var_override(self) -> None:
         """
-        When AI_MODEL_PATH=custom/path.keras, load_model() must call
-        tf.keras.models.load_model with 'custom/path.keras'.
+        When GEMINI_MODEL=gemini-1.5-pro, load_model() must use that model.
         Validates: Req 2.2
         """
         PredictionService._model = None
 
-        with patch.dict(os.environ, {"AI_MODEL_PATH": "custom/path.keras"}):
-            with patch("ai.services.tf") as mock_tf:
-                mock_tf.keras.models.load_model.return_value = MagicMock()
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-key", "GEMINI_MODEL": "gemini-1.5-pro"}):
+            with patch("ai.services.genai") as mock_genai:
+                mock_genai.GenerativeModel.return_value = MagicMock()
                 PredictionService.load_model()
-                mock_tf.keras.models.load_model.assert_called_once_with(
-                    "custom/path.keras"
-                )
+                mock_genai.GenerativeModel.assert_called_once_with("gemini-1.5-pro")
 
     # ── Environment Variable: AI_MODEL_VERSION ───────────────────────────────
 
     def test_ai_model_version_default(self) -> None:
         """
-        When AI_MODEL_VERSION is unset, predict() must return model_version='v1.0'.
+        When AI_MODEL_VERSION and GEMINI_MODEL are unset, predict() must
+        return model_version='gemini-1.5-flash'.
         Validates: Req 2.2
         """
-        mock_model = MagicMock()
-        mock_model.predict.return_value = np.array([[100.0]])
-        PredictionService._model = mock_model
+        mock_gemini = MagicMock()
+        mock_gemini.generate_content.return_value.text = json.dumps({
+            "predicted_price": 100.00, "lower_bound": 90.00, "upper_bound": 110.00,
+        })
+        PredictionService._model = mock_gemini
 
-        env = {k: v for k, v in os.environ.items() if k != "AI_MODEL_VERSION"}
+        env = {k: v for k, v in os.environ.items() if k not in ("AI_MODEL_VERSION", "GEMINI_MODEL")}
         with patch.dict(os.environ, env, clear=True):
             result = PredictionService.predict(
-                crop_type="Maize",
-                quantity="10.00",
-                unit="kg",
-                location="Kano",
-                season="wet",
-                user_id=self.farmer.id,
+                crop_type="Maize", quantity="10.00", unit="kg",
+                location="Kano", season="wet", user_id=self.farmer.id,
             )
 
-        self.assertEqual(result["model_version"], "v1.0")
+        self.assertEqual(result["model_version"], "gemini-1.5-flash")
 
     def test_ai_model_version_override(self) -> None:
         """
         When AI_MODEL_VERSION=v2.5, predict() must return model_version='v2.5'.
         Validates: Req 2.2
         """
-        mock_model = MagicMock()
-        mock_model.predict.return_value = np.array([[100.0]])
-        PredictionService._model = mock_model
+        mock_gemini = MagicMock()
+        mock_gemini.generate_content.return_value.text = json.dumps({
+            "predicted_price": 100.00, "lower_bound": 90.00, "upper_bound": 110.00,
+        })
+        PredictionService._model = mock_gemini
 
         with patch.dict(os.environ, {"AI_MODEL_VERSION": "v2.5"}):
             result = PredictionService.predict(
-                crop_type="Maize",
-                quantity="10.00",
-                unit="kg",
-                location="Kano",
-                season="wet",
-                user_id=self.farmer.id,
+                crop_type="Maize", quantity="10.00", unit="kg",
+                location="Kano", season="wet", user_id=self.farmer.id,
             )
 
         self.assertEqual(result["model_version"], "v2.5")

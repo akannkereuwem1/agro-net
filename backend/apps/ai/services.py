@@ -1,23 +1,23 @@
 """
 Service layer for the AI app.
 
-Contains PredictionService (TensorFlow/Keras price prediction) and
+Contains PredictionService (Gemini-powered price prediction) and
 ClassificationService (Google Cloud Vision image classification).
 """
 
+import json
 import logging
 import os
+import re
 from decimal import Decimal
 from uuid import UUID
 
-import numpy as np
+import requests
 
 try:
-    import tensorflow as tf
+    import google.generativeai as genai
 except ImportError:
-    tf = None  # type: ignore[assignment]
-
-import requests
+    genai = None  # type: ignore[assignment]
 
 try:
     from google.cloud import vision
@@ -36,76 +36,64 @@ from .models import PricePrediction
 
 logger = logging.getLogger(__name__)
 
+_GEMINI_PROMPT = """You are an agricultural market price prediction assistant for Nigerian markets.
+
+Given the produce details below, predict the realistic market price per unit in Nigerian Naira (NGN).
+Base your estimate on typical Nigerian market prices for the crop, location, and season.
+
+Produce details:
+- Crop type: {crop_type}
+- Quantity: {quantity} {unit}
+- Market location: {location}
+- Season: {season}
+
+Respond with ONLY a valid JSON object — no explanation, no markdown, no code fences:
+{{"predicted_price": 450.00, "lower_bound": 405.00, "upper_bound": 495.00}}
+
+Rules:
+- predicted_price is the price per unit in NGN
+- lower_bound = predicted_price * 0.9
+- upper_bound = predicted_price * 1.1
+- All values must be positive numbers with up to 2 decimal places
+"""
+
 
 class PredictionService:
     """
-    Handles TensorFlow/Keras price prediction.
+    Handles price prediction using the Google Gemini generative AI API.
 
-    The Keras model is loaded once at application startup via ``load_model()``
-    and reused for all subsequent ``predict()`` calls.
+    ``load_model()`` validates the API key and initialises the Gemini client.
+    ``predict()`` sends a structured prompt and parses the JSON response.
+    No TensorFlow or .keras file is required.
     """
 
-    _model = None  # class-level singleton
+    _model = None  # holds the genai.GenerativeModel instance after load_model()
 
     @classmethod
     def load_model(cls) -> None:
         """
-        Load the TF/Keras model from the path specified by ``AI_MODEL_PATH``.
-
-        Reads the ``AI_MODEL_PATH`` environment variable (default:
-        ``"ai/model/price_model.keras"``).  Stores the loaded model in
-        ``cls._model`` for reuse.
+        Initialise the Gemini client using the ``GEMINI_API_KEY`` env var.
 
         Raises:
-            ModelNotAvailableError: If the model file does not exist or cannot
-                be opened.
+            ModelNotAvailableError: If ``GEMINI_API_KEY`` is not set or
+                ``google-generativeai`` is not installed.
         """
-        if tf is None:
+        if genai is None:
             raise ModelNotAvailableError(
-                "TensorFlow is not installed; cannot load the prediction model."
+                "google-generativeai is not installed. "
+                "Run: uv add google-generativeai"
             )
 
-        model_path = os.environ.get("AI_MODEL_PATH", "ai/model/price_model.keras")
-
-        try:
-            cls._model = tf.keras.models.load_model(model_path)
-        except (OSError, FileNotFoundError) as exc:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
             raise ModelNotAvailableError(
-                f"Prediction model file not found at '{model_path}'."
-            ) from exc
+                "GEMINI_API_KEY environment variable is not set."
+            )
 
-    @staticmethod
-    def _encode_features(
-        crop_type: str,
-        unit: str,
-        location: str,
-        season: str,
-    ) -> list[float]:
-        """
-        Encode categorical string inputs into a deterministic float vector.
-
-        Each string is mapped to a float in [0.0, 1.0) using
-        ``hash(value) % 1000 / 1000.0``.
-
-        Args:
-            crop_type: The type of agricultural produce (e.g. ``"tomato"``).
-            unit: The measurement unit (e.g. ``"kg"``).
-            location: The geographic location string.
-            season: The agricultural season (e.g. ``"dry"``).
-
-        Returns:
-            A list of four floats: ``[crop_type_enc, unit_enc, location_enc,
-            season_enc]``.
-        """
-        def _encode(value: str) -> float:
-            return hash(value) % 1000 / 1000.0
-
-        return [
-            _encode(crop_type),
-            _encode(unit),
-            _encode(location),
-            _encode(season),
-        ]
+        genai.configure(api_key=api_key)
+        model_name = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+        cls._model = genai.GenerativeModel(model_name)
+        logger.info("PredictionService: Gemini model '%s' initialised.", model_name)
 
     @classmethod
     def predict(
@@ -118,17 +106,16 @@ class PredictionService:
         user_id: UUID,
     ) -> dict:
         """
-        Run inference and persist the result.
+        Request a price prediction from Gemini and persist the result.
 
-        Encodes the categorical inputs, builds a ``(1, 5)`` feature vector,
-        calls the loaded Keras model, computes a ±10 % confidence interval,
-        persists a ``PricePrediction`` record, and returns a result dict.
+        Sends a structured prompt to the Gemini API, parses the JSON response,
+        persists a ``PricePrediction`` record, and returns the result dict.
 
         Args:
-            crop_type: Type of agricultural produce.
+            crop_type: Type of agricultural produce (e.g. ``"Tomato"``).
             quantity: Quantity of produce (must be > 0).
-            unit: Measurement unit.
-            location: Geographic location.
+            unit: Measurement unit (e.g. ``"kg"``).
+            location: Geographic market location.
             season: Agricultural season.
             user_id: UUID of the requesting user.
 
@@ -137,29 +124,43 @@ class PredictionService:
             ``upper_bound``, and ``model_version``.
 
         Raises:
-            ModelNotAvailableError: If the model has not been loaded.
-            PredictionError: If the model raises an exception during inference.
+            ModelNotAvailableError: If ``load_model()`` has not been called.
+            PredictionError: If the Gemini API call fails or returns
+                unparseable output.
         """
         if cls._model is None:
             raise ModelNotAvailableError(
                 "Prediction model is not loaded. Call load_model() first."
             )
 
-        encoded = cls._encode_features(crop_type, unit, location, season)
-        feature_vector = np.array([[float(quantity)] + encoded], dtype=np.float32)
+        prompt = _GEMINI_PROMPT.format(
+            crop_type=crop_type,
+            quantity=quantity,
+            unit=unit,
+            location=location,
+            season=season,
+        )
 
         try:
-            output = cls._model.predict(feature_vector)
+            response = cls._model.generate_content(prompt)
+            raw_text = response.text.strip()
+
+            # Strip markdown code fences if the model wraps the JSON
+            raw_text = re.sub(r"```(?:json)?", "", raw_text).strip().rstrip("`")
+
+            data = json.loads(raw_text)
+            predicted_price = Decimal(str(data["predicted_price"])).quantize(Decimal("0.01"))
+            lower_bound = Decimal(str(data["lower_bound"])).quantize(Decimal("0.01"))
+            upper_bound = Decimal(str(data["upper_bound"])).quantize(Decimal("0.01"))
+
         except Exception as exc:
-            logger.error("Model inference failed: %s", exc, exc_info=True)
-            raise PredictionError("Model inference failed.") from exc
+            logger.error("Gemini prediction failed: %s", exc, exc_info=True)
+            raise PredictionError("Prediction failed.") from exc
 
-        raw_price = output[0][0]
-        predicted_price = Decimal(str(raw_price)).quantize(Decimal("0.01"))
-        lower_bound = (predicted_price * Decimal("0.9")).quantize(Decimal("0.01"))
-        upper_bound = (predicted_price * Decimal("1.1")).quantize(Decimal("0.01"))
-
-        model_version = os.environ.get("AI_MODEL_VERSION", "v1.0")
+        model_version = os.environ.get(
+            "AI_MODEL_VERSION",
+            os.environ.get("GEMINI_MODEL", "gemini-1.5-flash"),
+        )
 
         PricePrediction.objects.create(
             user_id=user_id,

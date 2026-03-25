@@ -7,6 +7,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ai.serializers import ClassifyImageResponseSerializer
+import json
 
 
 # Feature: ai-price-prediction, Property 18: ImageClassification labels serialiser round-trip
@@ -265,10 +266,13 @@ def test_successful_prediction_always_persisted(crop_type, quantity, unit, locat
     )
 
     mock_model = MagicMock()
-    mock_model.predict.return_value = np.array([[500.0]])
+    mock_model.generate_content.return_value.text = json.dumps({
+        "predicted_price": 500.00,
+        "lower_bound": 450.00,
+        "upper_bound": 550.00,
+    })
 
-    with patch('ai.services.tf') as mock_tf:
-        mock_tf.keras.models.load_model.return_value = mock_model
+    with patch('ai.services.genai'):
         PredictionService._model = mock_model
 
         result = PredictionService.predict(
@@ -324,7 +328,7 @@ def test_failed_prediction_never_persisted(crop_type, quantity, unit, location, 
     )
 
     mock_model = MagicMock()
-    mock_model.predict.side_effect = Exception('inference error')
+    mock_model.generate_content.side_effect = Exception('Gemini API error')
 
     PredictionService._model = mock_model
 
