@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ProductCard from "../../components/ProductCard";
-import TextInputField from "../../components/ui/TextInputField";
+import TextInputField from "../../components/ui/TextInputField";  
 import { fetchProducts, Product } from "../../lib/productService";
 
 export default function Market() {
