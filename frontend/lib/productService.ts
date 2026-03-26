@@ -54,13 +54,7 @@ export const fetchProductById = async (id: string) => {
 };
 
 export const createProduct = async (data: FormData | Partial<Product>) => {
-  const response = await api.post("/products/", data, {
-    headers: {
-      "Content-Type":
-        data instanceof FormData ? "multipart/form-data" : "application/json",
-    },
-  });
-  console.log(response.data);
+  const response = await api.post("/products/", data);
   return response.data;
 };
 

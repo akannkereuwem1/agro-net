@@ -4,6 +4,8 @@ import { createProduct } from "@/lib/productService";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
+import NetInfo from "@react-native-community/netinfo";
+import { enqueue } from "../../../lib/offlineQueue";
 import React, { useState } from "react";
 import {
   Alert,
@@ -69,7 +71,9 @@ export default function AddListing() {
     }
   };
 
+  
   const handleCreate = async () => {
+    const netState = await NetInfo.fetch();
     if (!form.title || !form.crop_type || !form.price_per_unit || !imageUri) {
       Alert.alert(
         "Error",
@@ -78,7 +82,11 @@ export default function AddListing() {
       return;
     }
 
+
+
     try {
+    
+        
       setIsSubmitting(true);
 
       // 1. Initialize FormData
@@ -109,11 +117,23 @@ export default function AddListing() {
         name: filename,
         type,
       } as any); // 'as any' bypasses a known TypeScript quirk with RN FormData
-
-      // 4. Send to Heroku
+    if (netState.isConnected && netState.isInternetReachable) {
       await createProduct(formData);
 
       Alert.alert("Success", "Your listing has been created!");
+    }  else {
+    await enqueue({
+        type: "CREATE_LISTING",
+        payload: {
+          ...form,
+          imageUri,
+        },
+      });
+    Alert.alert(
+      "Saved Offline",
+      "No connection detected. Your listing will be posted automatically when you're back online."
+    );
+  }
       router.back();
     } catch (err) {
       console.error(err);

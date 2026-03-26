@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context"; // Added this import
+import { SafeAreaView } from "react-native-safe-area-context";
 import ProductCard from "../../components/ProductCard";
 import TextInputField from "../../components/ui/TextInputField";
 import { fetchProducts, Product } from "../../lib/productService";
