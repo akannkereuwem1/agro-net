@@ -116,8 +116,9 @@ export default function AddListing() {
         uri: imageUri,
         name: filename,
         type,
-      } as any); // 'as any' bypasses a known TypeScript quirk with RN FormData
+      } as any);
     if (netState.isConnected && netState.isInternetReachable) {
+      console.log(formData);
       await createProduct(formData);
 
       Alert.alert("Success", "Your listing has been created!");

@@ -22,12 +22,12 @@ export default function FarmerOrders() {
   const loadOrders = async () => {
     try {
       const data = await fetchOrders();
-      // Sort: Newest first
-      const sorted = data.sort(
+      const list: Order[] = Array.isArray(data) ? data : [];
+      const sortedData = list.sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
-      setOrders(sorted);
+      setOrders(sortedData);
     } catch (error) {
       console.error("Farmer Orders Load Error:", error);
     } finally {
