@@ -346,12 +346,15 @@ The mobile app queues failed actions (create listing, place order) in AsyncStora
 
 ---
 
-## Demo & Access
+## Live Demo & API Docs
 
-- **Swagger UI:** `http://127.0.0.1:8000/api/docs/` (dark mode enabled)
-- **ReDoc:** `http://127.0.0.1:8000/api/redoc/`
+| | Link |
+|---|---|
+| Live App | [https://expo.dev/accounts/treasure92/projects/AgroNet/builds/57573939-c78f-4506-8757-70c60982fd2b](#) |
+| Swagger UI (API Docs) | [https://agronet-backend-02382983bf13.herokuapp.com/api/docs/](#) |
 
-Sample credentials (after running `python scripts/generate_dummy_model.py` from `backend/`):
+
+Sample credentials for testing:
 
 ```
 Farmer:  farmer@agronet.demo / demo1234
