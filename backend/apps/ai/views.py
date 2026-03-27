@@ -5,6 +5,15 @@ Provides HTTP handling for price prediction and image classification.
 Views are intentionally thin — all business logic lives in the service layer.
 """
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import serializers as drf_serializers
 from rest_framework import status
 from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -24,6 +33,7 @@ from .models import ImageClassification, PricePrediction
 from .serializers import (
     ClassificationHistorySerializer,
     ClassifyImageRequestSerializer,
+    ClassifyImageResponseSerializer,
     PricePredictionHistorySerializer,
     PricePredictionRequestSerializer,
 )
@@ -46,6 +56,55 @@ class ServiceUnavailable(APIException):
 # ---------------------------------------------------------------------------
 # Price Prediction View
 # ---------------------------------------------------------------------------
+
+
+@extend_schema(
+    methods=["POST"],
+    tags=["AI"],
+    summary="Request a price prediction",
+    description="Submit produce details to get a Gemini-powered NGN price estimate.\n\n**unit:** kg, tonnes, bags, crates, pieces\n\n**season:** dry, wet, harmattan, off-season",
+    request=PricePredictionRequestSerializer,
+    responses={
+        200: inline_serializer(
+            name="PricePredictionSuccess",
+            fields={
+                "success": drf_serializers.BooleanField(),
+                "predicted_price": drf_serializers.DecimalField(max_digits=12, decimal_places=2),
+                "lower_bound": drf_serializers.DecimalField(max_digits=12, decimal_places=2),
+                "upper_bound": drf_serializers.DecimalField(max_digits=12, decimal_places=2),
+                "model_version": drf_serializers.CharField(),
+            },
+        ),
+        400: OpenApiResponse(description="Validation error"),
+        401: OpenApiResponse(description="Not authenticated"),
+        500: OpenApiResponse(description="Inference failed"),
+        503: OpenApiResponse(description="Service unavailable"),
+    },
+    examples=[
+        OpenApiExample(
+            "Example request",
+            request_only=True,
+            value={"crop_type": "Tomato", "quantity": "100.00", "unit": "kg", "location": "Lagos, Nigeria", "season": "dry"},
+        ),
+        OpenApiExample(
+            "Example response",
+            response_only=True,
+            status_codes=["200"],
+            value={"success": True, "predicted_price": "450.00", "lower_bound": "405.00", "upper_bound": "495.00", "model_version": "gemini-1.5-flash"},
+        ),
+    ],
+)
+@extend_schema(
+    methods=["GET"],
+    tags=["AI"],
+    summary="Get prediction history",
+    description="Paginated list of the authenticated user's past predictions, newest first.",
+    parameters=[OpenApiParameter("page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False)],
+    responses={
+        200: PricePredictionHistorySerializer(many=True),
+        401: OpenApiResponse(description="Not authenticated"),
+    },
+)
 
 
 class PricePredictionView(APIView):
@@ -146,6 +205,42 @@ def _classify_image_error_response(exc: ValidationError) -> Response | None:
     return None
 
 
+@extend_schema(
+    methods=["POST"],
+    tags=["AI"],
+    summary="Classify an agricultural image",
+    description="Upload an image file (multipart/form-data) **or** provide an HTTPS URL. Exactly one must be supplied.\n\n**Accepted MIME types:** image/jpeg, image/png, image/webp, image/gif\n\n**Max file size:** 10 MB\n\n**image_url must use HTTPS.**\n\nThe returned `classification_id` can be passed to `POST /api/products/` to auto-populate `crop_type`.",
+    request=ClassifyImageRequestSerializer,
+    responses={
+        200: ClassifyImageResponseSerializer,
+        400: OpenApiResponse(description="Both inputs absent/present, or non-HTTPS URL"),
+        401: OpenApiResponse(description="Not authenticated"),
+        413: OpenApiResponse(description="File exceeds 10 MB"),
+        415: OpenApiResponse(description="Unsupported MIME type"),
+        422: OpenApiResponse(description="URL unreachable or image unrecognisable"),
+        503: OpenApiResponse(description="Vision API unavailable or credentials missing"),
+    },
+    examples=[
+        OpenApiExample("Via URL", request_only=True, value={"image_url": "https://example.com/tomato.jpg"}),
+        OpenApiExample(
+            "Success",
+            response_only=True,
+            status_codes=["200"],
+            value={"success": True, "classification_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "labels": [{"label": "Tomato", "confidence": 0.9821}], "created_at": "2026-03-25T14:00:00Z"},
+        ),
+    ],
+)
+@extend_schema(
+    methods=["GET"],
+    tags=["AI"],
+    summary="Get classification history",
+    description="Paginated list of the authenticated user's past classifications, newest first.",
+    parameters=[OpenApiParameter("page", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False)],
+    responses={
+        200: ClassificationHistorySerializer(many=True),
+        401: OpenApiResponse(description="Not authenticated"),
+    },
+)
 class ImageClassificationView(APIView):
     """
     POST  /api/ai/classify-image/  — Upload image or provide URL, get labels.
