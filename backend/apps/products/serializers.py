@@ -53,13 +53,14 @@ class ProductSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs: dict) -> dict:
-        """Require crop_type unless classification_id is provided."""
-        has_classification = bool(attrs.get('classification_id'))
-        has_crop_type = bool(attrs.get('crop_type', '').strip())
-        if not has_classification and not has_crop_type:
-            raise serializers.ValidationError(
-                {'crop_type': 'This field is required when classification_id is not provided.'}
-            )
+        """Require crop_type unless classification_id is provided (full create only)."""
+        if not self.partial:
+            has_classification = bool(attrs.get('classification_id'))
+            has_crop_type = bool(attrs.get('crop_type', '').strip())
+            if not has_classification and not has_crop_type:
+                raise serializers.ValidationError(
+                    {'crop_type': 'This field is required when classification_id is not provided.'}
+                )
         return attrs
 
     def validate_quantity(self, value: Decimal) -> Decimal:
