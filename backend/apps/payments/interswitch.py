@@ -32,11 +32,19 @@ def _get_auth_headers() -> dict:
     }
 
 
+def _is_mock_mode() -> bool:
+    """Return True when PAYMENT_MOCK_MODE=true in the environment."""
+    return os.environ.get("PAYMENT_MOCK_MODE", "").lower() == "true"
+
+
 def initiate_transaction(order_id: str, amount: Decimal, reference: str) -> dict:
     """
     Initiate a payment transaction with Interswitch.
 
     POSTs to {INTERSWITCH_BASE_URL}/api/v2/purchases.
+    When PAYMENT_MOCK_MODE=true, returns a fake successful response without
+    making any network call — useful for local development when the sandbox
+    is unreachable.
 
     Args:
         order_id: The AgroNet order identifier.
@@ -49,6 +57,14 @@ def initiate_transaction(order_id: str, amount: Decimal, reference: str) -> dict
     Raises:
         InterswitchError: If Interswitch returns a non-2xx HTTP status code.
     """
+    if _is_mock_mode():
+        return {
+            "responseCode": "00",
+            "checkoutUrl": f"https://mock-pay.agronet.local/checkout/{reference}",
+            "transactionReference": reference,
+            "mock": True,
+        }
+
     base_url = _get_base_url()
     url = f"{base_url}/api/v2/purchases"
     payload = {
@@ -76,6 +92,8 @@ def verify_transaction(reference: str) -> dict:
     Verify a transaction status with Interswitch.
 
     GETs transaction status from {INTERSWITCH_BASE_URL}/api/v2/purchases/{reference}.
+    When PAYMENT_MOCK_MODE=true, returns a fake successful response without
+    making any network call.
 
     Args:
         reference: The unique transaction reference to look up.
@@ -86,6 +104,14 @@ def verify_transaction(reference: str) -> dict:
     Raises:
         InterswitchError: If Interswitch returns a non-2xx HTTP status code.
     """
+    if _is_mock_mode():
+        return {
+            "responseCode": "00",
+            "amount": "500000",
+            "transactionReference": reference,
+            "mock": True,
+        }
+
     base_url = _get_base_url()
     url = f"{base_url}/api/v2/purchases/{reference}"
     headers = _get_auth_headers()
