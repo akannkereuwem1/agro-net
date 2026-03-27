@@ -113,8 +113,7 @@ const Profile = () => {
           </View>
         </View>
 
-        {/* --- Content --- */}
-        <LinkAccountBanner />
+
 
         <View className="mt-6">
           <Text className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest ml-4 mb-3">

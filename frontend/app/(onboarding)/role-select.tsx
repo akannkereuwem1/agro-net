@@ -43,10 +43,18 @@ const roles: {
 export default function RoleSelectScreen() {
   const router = useRouter();
   const [selected, setSelected] = useState<Role | null>(null);
-  const { email, full_name, password, setRole, setUserFromLogin } =
+  const { email, full_name, password, setRole, setUserFromLogin, role } =
     useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+
+    function goToTabs() {
+    if (role === "buyer") {
+      router.replace("/(buyer)");
+    } else if (role === "farmer") {
+      router.replace("/(farmer)");
+    }
+  }
 
   const handleRegister = async () => {
     if (selected) {
@@ -68,7 +76,7 @@ export default function RoleSelectScreen() {
         setUserFromLogin(user);
 
         // Route to the next step
-        router.replace("/(onboarding)/bank-link");
+        goToTabs();
       } catch (err: any) {
         const message =
           err.response?.data?.detail || err.message || "Something went wrong";
