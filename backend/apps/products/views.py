@@ -140,4 +140,6 @@ class FarmerProductListView(ListAPIView):
     permission_classes = [IsAuthenticated, IsFarmer]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Product.objects.none()
         return get_farmer_products(self.request.user)

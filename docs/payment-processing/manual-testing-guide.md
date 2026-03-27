@@ -19,6 +19,42 @@ INTERSWITCH_CLIENT_SECRET=your_client_secret
 
 ---
 
+## Mock Mode (Use When Sandbox Is Unreachable)
+
+If the Interswitch sandbox is unreachable from your network (e.g. SSL handshake timeout), enable mock mode in `backend/.env`:
+
+```
+PAYMENT_MOCK_MODE=true
+```
+
+When enabled, `initiate_transaction` and `verify_transaction` in `interswitch.py` skip all network calls and return fake successful responses. Real `Payment` records are still created and persisted to the database — the full flow works end-to-end.
+
+Mock responses look like:
+
+**Initiate:**
+```json
+{
+  "responseCode": "00",
+  "checkoutUrl": "https://mock-pay.agronet.local/checkout/AGN-...",
+  "transactionReference": "AGN-...",
+  "mock": true
+}
+```
+
+**Verify:**
+```json
+{
+  "responseCode": "00",
+  "amount": "500000",
+  "transactionReference": "AGN-...",
+  "mock": true
+}
+```
+
+To switch back to live Interswitch calls, set `PAYMENT_MOCK_MODE=false` and restart the server.
+
+---
+
 ## Step 1 — Register a Buyer
 
 **POST /api/users/register/**
@@ -105,9 +141,11 @@ Copy the `transaction_reference` for the next step.
 }
 ```
 
+**Expected with `PAYMENT_MOCK_MODE=true`:** `200` with `status: successful` — no network call made.
+
 **Expected with real sandbox credentials:** `200` with `status: successful` if Interswitch confirms it.
 
-**Expected without real credentials:** `500` InterswitchError (the call reaches Interswitch but auth fails — this is correct behavior).
+**Expected without real credentials and mock mode off:** `500` InterswitchError (the call reaches Interswitch but auth fails — this is correct behavior).
 
 ---
 

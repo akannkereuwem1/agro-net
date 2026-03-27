@@ -27,6 +27,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+@extend_schema(exclude=True)
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def test_500_error(request):
