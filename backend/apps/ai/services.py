@@ -36,22 +36,10 @@ from .models import PricePrediction
 
 logger = logging.getLogger(__name__)
 
-_GEMINI_PROMPT = """You are an agricultural commodity price analyst specializing in Nigerian markets.
+_GEMINI_PROMPT = """You are an agricultural market price prediction assistant for Nigerian markets.
 
-Your task is to estimate a realistic **current market price per unit (NGN)** for a given agricultural product using implicit knowledge of:
-
-- Regional price variations across Nigeria (urban vs rural, North vs South)
-- Seasonal supply and demand effects (harvest vs off-season)
-- Inflation trends and recent food price movements in Nigeria
-- Perishability and storage constraints of the crop
-- Market type differences (farm gate, wholesale, retail open market)
-
-You must internally simulate a reasoning process that considers:
-1. Typical baseline price of the crop in Nigeria
-2. Adjustments based on location (transport/logistics costs, demand density)
-3. Adjustments based on season (scarcity vs abundance)
-4. Quantity effects (bulk pricing vs small unit retail)
-5. Volatility (recent fluctuations in Nigerian food markets)
+Given the produce details below, predict the realistic market price per unit in Nigerian Naira (NGN).
+Base your estimate on typical Nigerian market prices for the crop, location, and season.
 
 Produce details:
 - Crop type: {crop_type}
@@ -59,16 +47,14 @@ Produce details:
 - Market location: {location}
 - Season: {season}
 
-Output STRICTLY a JSON object with no explanation:
-{"predicted_price": 0.00, "lower_bound": 0.00, "upper_bound": 0.00}
+Respond with ONLY a valid JSON object — no explanation, no markdown, no code fences:
+{{"predicted_price": 450.00, "lower_bound": 405.00, "upper_bound": 495.00}}
 
-Constraints:
-- predicted_price = realistic price per unit in NGN (not total price)
+Rules:
+- predicted_price is the price per unit in NGN
 - lower_bound = predicted_price * 0.9
 - upper_bound = predicted_price * 1.1
-- Round all values to 2 decimal places
-- All values must be positive
-- Do NOT output text outside JSON
+- All values must be positive numbers with up to 2 decimal places
 """
 
 
