@@ -350,8 +350,10 @@ The mobile app queues failed actions (create listing, place order) in AsyncStora
 
 | | Link |
 |---|---|
-| Live App | [https://expo.dev/accounts/treasure92/projects/AgroNet/builds/57573939-c78f-4506-8757-70c60982fd2b](#) |
-| Swagger UI (API Docs) | [https://agronet-backend-02382983bf13.herokuapp.com/api/docs/](#) |
+| Live App | [Download / Preview on Expo](https://expo.dev/accounts/treasure92/projects/AgroNet/builds/57573939-c78f-4506-8757-70c60982fd2b) |
+| API Base URL | `https://agronet-backend-02382983bf13.herokuapp.com/api` |
+| Swagger UI (API Docs) | [API Docs](https://agronet-backend-02382983bf13.herokuapp.com/api/docs/) |
+| ReDoc | [ReDoc](https://agronet-backend-02382983bf13.herokuapp.com/api/redoc/) |
 
 
 Sample credentials for testing:
