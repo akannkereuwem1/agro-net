@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://agronet-backend-02382983bf13.herokuapp.com",
+  baseURL: "https://agronet-backend-02382983bf13.herokuapp.com/api",
   timeout: 10000,
   headers: {
     "Content-Type": "application/json",
