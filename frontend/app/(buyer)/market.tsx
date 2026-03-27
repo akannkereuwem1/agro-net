@@ -57,7 +57,10 @@ export default function Market() {
 
   return (
     /* Replaced View with SafeAreaView and adjusted padding to px-4 pt-4 */
-    <SafeAreaView className="flex-1 bg-gray-50 dark:bg-background-dark px-4 pt-4">
+        <SafeAreaView 
+      edges={['top', 'left', 'right']} 
+      className="flex-1 bg-gray-50 dark:bg-background-dark p-4"
+    >
       {/* Search Header */}
       <View className="mb-2">
         <Text className="text-2xl font-bold text-gray-900 dark:text-white mb-4">

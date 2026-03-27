@@ -37,15 +37,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="insights"
-        options={{
-          title: "Insights",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="sparkles-outline" size={24} color={color} />
-          ),
-        }}
-      />
+
       <Tabs.Screen
         name="profile"
         options={{

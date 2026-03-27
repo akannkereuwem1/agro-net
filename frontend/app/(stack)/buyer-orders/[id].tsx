@@ -125,7 +125,7 @@ export default function BuyerOrderDetail() {
               ? "bg-orange-100 dark:bg-orange-900/40"
               : order.status === "completed"
               ? "bg-green-100 dark:bg-green-900/40"
-              : "bg-red-100 dark:bg-red-900/40"
+              : "bg-green-100 dark:bg-green-900/40"
           }`}
         >
           <Ionicons
@@ -136,7 +136,7 @@ export default function BuyerOrderDetail() {
                 ? "time"
                 : order.status === "completed"
                 ? "checkmark-circle"
-                : "close-circle"
+                : "checkmark-circle"
             }
             size={32}
             color={
@@ -144,9 +144,9 @@ export default function BuyerOrderDetail() {
                 ? "#C2410C"
                 : isPending
                 ? "#4B5563"
-                : order.status === "completed"
-                ? "#15803D"
-                : "#B91C1C"
+                
+                : "#15803D"
+                
             }
           />
           <View className="ml-4 flex-1">
@@ -160,7 +160,7 @@ export default function BuyerOrderDetail() {
                 ? "Farmer confirmed! Please proceed to payment."
                 : order.status === "completed"
                 ? "Order completed successfully."
-                : "This order was declined."}
+                : "This order was completed!"}
             </Text>
           </View>
         </View>

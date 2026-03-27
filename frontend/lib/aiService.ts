@@ -2,7 +2,7 @@ import api from "./api";
 
 // ─── Price Prediction ──────────────────────────────────────────────────────────
 
-export type PriceUnit = "kg" | "tonnes" | "bags" | "crates" | "pieces";
+export type PriceUnit = string;
 export type Season = "dry" | "wet" | "harmattan" | "off-season";
 
 export interface PricePredictionRequest {

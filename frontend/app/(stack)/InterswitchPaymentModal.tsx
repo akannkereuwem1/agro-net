@@ -97,7 +97,7 @@ function buildPaymentHTML(amount: string, reference: string): string {
     </div>
     <div class="field">
       <label>Card Number</label>
-      <input id="cardNumber" type="tel" placeholder="0000  0000  0000  0000" maxlength="19" inputmode="numeric" autocomplete="cc-number" />
+  <input id="cardNumber" type="tel" placeholder="0000 0000 0000 0000" maxlength="19" inputmode="numeric" autocomplete="cc-number" />
       <p class="error-msg" id="cardNumberErr">Enter a valid 16-digit card number.</p>
     </div>
     <div class="field">
@@ -131,9 +131,10 @@ function buildPaymentHTML(amount: string, reference: string): string {
     const payBtn = document.getElementById('payBtn');
     const overlay = document.getElementById('overlay');
 
-    numEl.addEventListener('input', e => {
+  numEl.addEventListener('input', e => {
       let v = e.target.value.replace(/\\D/g, '').slice(0, 16);
-      e.target.value = v.replace(/(\\d{4})(?=\\d)/g, '$1  ');
+      // FIX: Use a single space here so 16 digits + 3 spaces = 19 characters
+      e.target.value = v.replace(/(\\d{4})(?=\\d)/g, '$1 '); 
     });
     expEl.addEventListener('input', e => {
       let v = e.target.value.replace(/\\D/g, '').slice(0, 4);

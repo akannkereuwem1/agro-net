@@ -17,12 +17,14 @@ export default function FarmerOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"active" | "history">("active");
 
   const loadOrders = async () => {
     try {
       const data = await fetchOrders();
-      const list: Order[] = Array.isArray(data) ? data : [];
+      
+      // FIX: Map correctly from the paginated "results" array
+      const list: Order[] = data && Array.isArray(data.results) ? data.results : [];
+      
       const sortedData = list.sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -30,6 +32,7 @@ export default function FarmerOrders() {
       setOrders(sortedData);
     } catch (error) {
       console.error("Farmer Orders Load Error:", error);
+      setOrders([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -44,13 +47,6 @@ export default function FarmerOrders() {
     setRefreshing(true);
     loadOrders();
   }, []);
-
-  // Filter orders based on tab
-  const filteredOrders = orders.filter((o) => {
-    if (activeTab === "active")
-      return ["pending", "confirmed"].includes(o.status);
-    return ["completed", "declined"].includes(o.status);
-  });
 
   const renderOrderCard = ({ item }: { item: Order }) => {
     const isPending = item.status === "pending";
@@ -91,7 +87,7 @@ export default function FarmerOrders() {
         </View>
 
         <Text className="text-xl font-bold text-gray-900 dark:text-white mb-1">
-          {item.items[0]?.product_title || "Bulk Order"}
+          {item.items && item.items[0]?.product_title ? item.items[0].product_title : "Bulk Order"}
         </Text>
 
         <View className="flex-row items-center mb-4">
@@ -122,7 +118,7 @@ export default function FarmerOrders() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50 dark:bg-black px-5">
+    <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-gray-50 dark:bg-black px-5">
       <View className="pt-4 mb-6">
         <Text className="text-3xl font-black text-gray-900 dark:text-white">
           Sales
@@ -132,39 +128,15 @@ export default function FarmerOrders() {
         </Text>
       </View>
 
-      {/* Modern Tab Switcher */}
-      <View className="flex-row bg-gray-200 dark:bg-gray-900 p-1.5 rounded-2xl mb-6">
-        <TouchableOpacity
-          onPress={() => setActiveTab("active")}
-          className={`flex-1 py-3 rounded-xl items-center ${activeTab === "active" ? "bg-white dark:bg-gray-800 shadow-sm" : ""}`}
-        >
-          <Text
-            className={`font-bold ${activeTab === "active" ? "text-gray-900 dark:text-white" : "text-gray-500"}`}
-          >
-            Active
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setActiveTab("history")}
-          className={`flex-1 py-3 rounded-xl items-center ${activeTab === "history" ? "bg-white dark:bg-gray-800 shadow-sm" : ""}`}
-        >
-          <Text
-            className={`font-bold ${activeTab === "history" ? "text-gray-900 dark:text-white" : "text-gray-500"}`}
-          >
-            History
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       {loading && !refreshing ? (
         <ActivityIndicator size="large" color="#15803d" className="mt-10" />
       ) : (
         <FlatList
-          data={filteredOrders}
+          data={orders}
           keyExtractor={(item) => item.id}
           renderItem={renderOrderCard}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -176,7 +148,7 @@ export default function FarmerOrders() {
             <View className="items-center mt-20">
               <Ionicons name="receipt-outline" size={64} color="#D1D5DB" />
               <Text className="text-gray-400 text-lg font-medium mt-4">
-                No {activeTab} orders found.
+                No orders found.
               </Text>
             </View>
           }

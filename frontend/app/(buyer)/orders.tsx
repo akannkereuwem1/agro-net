@@ -18,15 +18,18 @@ export default function Orders() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadOrders = async () => {
+const loadOrders = async () => {
     try {
       const data = await fetchOrders();
-      // Guard: fetchOrders may return undefined/null/non-array on error or empty state
-      const list: Order[] = Array.isArray(data) ? data : [];
+      
+      // FIX: Extract the array from data.results instead of checking if 'data' itself is an array
+      const list: Order[] = data && Array.isArray(data.results) ? data.results : [];
+      
       const sortedData = list.sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
+      
       setOrders(sortedData);
     } catch (error) {
       console.error("Failed to fetch orders:", error);

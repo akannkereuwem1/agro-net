@@ -40,10 +40,10 @@ export interface PaginatedResponse<T> {
 
 // Fetch all orders for the authenticated user (Buyer sees theirs, Farmer sees theirs)
 export const fetchOrders = async () => {
-  // Note: Adjust the return type to PaginatedResponse<Order> if your API paginates this
-  const response = await api.get<Order[]>("/orders/");
+  // Update the generic type to use PaginatedResponse<Order>
+  const response = await api.get<PaginatedResponse<Order>>("/orders/");
   console.log(response.data);
-  return response.data;
+  return response.data; 
 };
 
 // Fetch a single order by ID

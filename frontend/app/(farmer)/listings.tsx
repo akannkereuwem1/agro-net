@@ -44,7 +44,10 @@ export default function FarmerListings() {
   }, []);
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50 dark:bg-background-dark">
+    <SafeAreaView 
+  edges={['top', 'left', 'right']} 
+  className="flex-1 bg-gray-50 dark:bg-background-dark"
+>
       <View className="flex-1 p-4 ">
         {/* Top Header & Add Button */}
         <View className="flex-row justify-between items-center mb-6">

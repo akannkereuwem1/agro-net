@@ -18,6 +18,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { uploadProductImage } from "@/lib/productService";
+import { predictPrice, Season } from "@/lib/aiService";
+import { updateProduct } from "@/lib/productService";
+import { ActivityIndicator } from "react-native";
 
 export default function AddListing() {
   const router = useRouter();
@@ -34,8 +37,43 @@ export default function AddListing() {
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPredicting, setIsPredicting] = useState(false);
 
-  const units = ["kg", "bag", "ton", "basket", "piece", "bunch"];
+
+  const units = ["kg"];
+
+
+// Derives Nigeria wet/dry season from current month
+const getSeason = (): Season => {
+  const month = new Date().getMonth() + 1; // 1–12
+  // Wet: April–October | Dry: November–March
+  return month >= 4 && month <= 10 ? "wet" : "dry";
+};
+
+const handlePredictPrice = async () => {
+  if (!form.crop_type) {
+    Alert.alert("Missing Info", "Please enter a crop category first so AI knows what to price.");
+    return;
+  }
+  try {
+    setIsPredicting(true);
+    const result = await predictPrice({
+      crop_type: form.crop_type,
+      quantity: form.quantity || "1",
+      unit: form.unit,
+      location: form.location || "Lagos, Nigeria", // fallback
+      season: getSeason(),
+    });
+    if (result.success) {
+      setForm({ ...form, price_per_unit: result.predicted_price });
+    }
+  } catch {
+    Alert.alert("AI Error", "Could not get a price prediction. Enter your price manually.");
+  } finally {
+    setIsPredicting(false);
+  }
+};
+
 
   const handleStep = (
     field: "quantity" | "price_per_unit",
@@ -116,8 +154,8 @@ const handleCreate = async () => {
             type,
           } as any);
 
-          console.log(`Uploading image for product ${newProduct.id}...`);
-          await uploadProductImage(newProduct.id, imageFormData);
+      console.log(`Uploading image for product ${newProduct.id}...`);
+      await uploadProductImage(newProduct.id, imageFormData);
         }
 
         Alert.alert("Success", "Your listing has been created!");
@@ -298,13 +336,34 @@ const handleCreate = async () => {
         </View>
 
         {/* Price */}
-        <TextInputField
-          label={`Price per ${form.unit} (₦) *`}
-          placeholder="0.00"
-          keyboardType="numeric"
-          value={form.price_per_unit}
-          onChangeText={(text) => setForm({ ...form, price_per_unit: text })}
-        />
+<View className="mb-6">
+  <View className="flex-row items-center justify-between mb-2">
+    <Text className="text-sm font-medium text-gray-700 dark:text-gray-300">
+      Price per {form.unit} (₦) *
+    </Text>
+    <TouchableOpacity
+      onPress={handlePredictPrice}
+      disabled={isPredicting}
+      className="flex-row items-center gap-1.5 bg-orange-50 dark:bg-orange-900/30 px-3 py-1.5 rounded-lg"
+    >
+      {isPredicting ? (
+        <ActivityIndicator size="small" color="#F57C00" />
+      ) : (
+        <Ionicons name="sparkles" size={14} color="#F57C00" />
+      )}
+      <Text className="text-xs font-semibold text-orange-500">
+        {isPredicting ? "Predicting…" : "AI Predict"}
+      </Text>
+    </TouchableOpacity>
+  </View>
+
+  <TextInputField
+    placeholder="0.00"
+    keyboardType="numeric"
+    value={form.price_per_unit}
+    onChangeText={(text) => setForm({ ...form, price_per_unit: text })}
+  />
+</View>
 
         <View className="mt-4">
           <Button label="Create First Listing" onPress={handleCreate} />
