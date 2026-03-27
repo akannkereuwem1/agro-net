@@ -42,6 +42,7 @@ export interface PaginatedResponse<T> {
 export const fetchOrders = async () => {
   // Note: Adjust the return type to PaginatedResponse<Order> if your API paginates this
   const response = await api.get<Order[]>("/orders/");
+  console.log(response.data);
   return response.data;
 };
 

@@ -63,6 +63,16 @@ export const updateProduct = async (id: string, data: Partial<Product>) => {
   return response.data;
 };
 
+export const uploadProductImage = async (id: string, data: FormData) => {
+  const response = await api.post(`/products/${id}/image/`, data, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+  return response.data;
+};
+
+
 export const deleteProduct = async (id: string) => {
   const response = await api.delete(`/products/${id}/`);
   return response.data;

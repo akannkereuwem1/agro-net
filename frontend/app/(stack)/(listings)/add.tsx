@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { uploadProductImage } from "@/lib/productService";
 
 export default function AddListing() {
   const router = useRouter();
@@ -72,69 +73,68 @@ export default function AddListing() {
   };
 
   
-  const handleCreate = async () => {
+const handleCreate = async () => {
     const netState = await NetInfo.fetch();
     if (!form.title || !form.crop_type || !form.price_per_unit || !imageUri) {
       Alert.alert(
         "Error",
-        "Please fill in all required fields and add a photo.",
+        "Please fill in all required fields and add a photo."
       );
       return;
     }
 
-
-
     try {
-    
-        
       setIsSubmitting(true);
 
-      // 1. Initialize FormData
-      const formData = new FormData();
+      if (netState.isConnected && netState.isInternetReachable) {
+        // 1. Create the product first (Text data only, no image)
+        const productData = {
+          title: form.title,
+          description: form.description,
+          crop_type: form.crop_type,
+          location: form.location,
+          quantity: parseFloat(form.quantity) || 1,
+          unit: form.unit,
+          price_per_unit: parseFloat(form.price_per_unit) || 0,
+          is_available: true,
+        };
 
-      // 2. Append all text fields
-      formData.append("title", form.title);
-      formData.append("description", form.description);
-      formData.append("crop_type", form.crop_type);
-      formData.append("location", form.location);
-      formData.append("quantity", String(parseFloat(form.quantity) || 1));
-      formData.append("unit", form.unit);
-      formData.append(
-        "price_per_unit",
-        String(parseFloat(form.price_per_unit) || 0),
-      );
-      formData.append("is_available", "true");
+        console.log("Creating product data...", productData);
+        // Ensure you import uploadProductImage from your productService
+        const newProduct = await createProduct(productData);
 
-      // 3. Append the Image
-      // React Native requires this specific object structure for file uploads
-      const filename = imageUri.split("/").pop() || "product.jpg";
-      const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : `image`;
+        // 2. Upload the image using the returned product ID
+        if (newProduct && newProduct.id) {
+          const imageFormData = new FormData();
+          const filename = imageUri.split("/").pop() || "product.jpg";
+          const match = /\.(\w+)$/.exec(filename);
+          const type = match ? `image/${match[1]}` : `image`;
 
-      formData.append("image", {
-        // <-- IMPORTANT: Change "image" to whatever field name your backend expects for the file (e.g., "file", "image_url", "photo")
-        uri: imageUri,
-        name: filename,
-        type,
-      } as any);
-    if (netState.isConnected && netState.isInternetReachable) {
-      console.log(formData);
-      await createProduct(formData);
+          imageFormData.append("image", {
+            uri: imageUri,
+            name: filename,
+            type,
+          } as any);
 
-      Alert.alert("Success", "Your listing has been created!");
-    }  else {
-    await enqueue({
-        type: "CREATE_LISTING",
-        payload: {
-          ...form,
-          imageUri,
-        },
-      });
-    Alert.alert(
-      "Saved Offline",
-      "No connection detected. Your listing will be posted automatically when you're back online."
-    );
-  }
+          console.log(`Uploading image for product ${newProduct.id}...`);
+          await uploadProductImage(newProduct.id, imageFormData);
+        }
+
+        Alert.alert("Success", "Your listing has been created!");
+      } else {
+        // Offline handling
+        await enqueue({
+          type: "CREATE_LISTING",
+          payload: {
+            ...form,
+            imageUri,
+          },
+        });
+        Alert.alert(
+          "Saved Offline",
+          "No connection detected. Your listing will be posted automatically when you're back online."
+        );
+      }
       router.back();
     } catch (err) {
       console.error(err);
