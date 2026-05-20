@@ -247,9 +247,7 @@ LOGGING = {
         },
         'file': {
             'level': 'WARNING',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'django_warnings.log',
-            'formatter': 'verbose',
+            'class': 'logging.FileHandler'
         },
     },
     'loggers': {
